@@ -14,7 +14,7 @@ df = pd.read_table("emir.txt", header=None)
 hostname = 'localhost'
 database = 'yok_atlas'
 username = 'postgres'
-pwd = 'Ju3Dt8h8.'
+pwd = 'pwd'
 port_id = 8080
 cur = None
 conn = None
