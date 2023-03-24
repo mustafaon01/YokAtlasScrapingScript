@@ -9,9 +9,6 @@ pd.set_option('display.max_columns', 29)
 pd.set_option('display.max_rows', 200)
 
 years = [2019, 2020, 2021, 2022]
-year = 2020
-pro_code = 106510032
-
 
 hostname = 'localhost'
 database = 'postgres'
@@ -50,33 +47,40 @@ table_location = {
     }
 
 
-def get_universities(table_name):
+def get_universities(table_name, pro_code):
     URL_UNIVERSITIES = f"{URL}{table_name}{pro_code}"
     response = requests.get(URL_UNIVERSITIES)
     return response
 
 
-def universities_table(pro_code,year,uni_name, fakulty, major_name):
+def universities_table(pro_code,year,uni_name, fakulty, major_name, uni_type, type_of_score, type_of_scholarship):
     universities_table = '''
-                        CREATE TABLE IF NOT EXISTS nur5(
+                        CREATE TABLE IF NOT EXISTS nur51(
                         PRO_CODE INT,
                         YIL INT,
                         UNIVERSITE_ADI VARCHAR(500),
                         FAKULTE VARCHAR(500),
-                        BOLUM_ADI VARCHAR(500)
+                        BOLUM_ADI VARCHAR(500),
+                        UNI_TYPE VARCHAR(100),
+                        PUAN_TURU VARCHAR(100),
+                        BURS_TURU VARCHAR(100)
      )'''
     cur.execute(universities_table)
     conn.commit()
     universities_table_insert = '''
-                        INSERT INTO nur5(
+                        INSERT INTO nur51(
                         PRO_CODE ,
                         YIL ,
                         UNIVERSITE_ADI ,
                         FAKULTE ,
-                        BOLUM_ADI ) VALUES (%s,%s,%s,%s,%s)'''
+                        BOLUM_ADI,
+                        UNI_TYPE ,
+                        PUAN_TURU,
+                        BURS_TURU ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)'''
 
-    insert_values = (str(pro_code), str(year), str(uni_name), str(fakulty), str(major_name))
-    cur.execute(universities_table_insert,insert_values)
+    insert_values = (str(pro_code), str(year), str(uni_name), str(fakulty), str(major_name), str(uni_type),
+                     str(type_of_score), str(type_of_scholarship))
+    cur.execute(universities_table_insert, insert_values)
     conn.commit()
 
 
@@ -89,10 +93,10 @@ conn = psycopg2.connect(
     )
 cur = conn.cursor()
 
-
 engine = create_engine('postgresql://postgres:Ju3Dt8h8@localhost:5432/postgres')
-
-
+df = pd.read_table("emir.txt", header=None)
+program_number_list = df.to_dict()
+#TODO: create a loop for taking a pro_code from txt file and year should be txt files' name.
 for year in years:
     if year != 2022:
         URL = f"https://yokatlas.yok.gov.tr/{year}/content/lisans-dynamic/"
@@ -101,7 +105,7 @@ for year in years:
     counter = 1
     for key in table_location:
         table = table_location[key]
-        text = get_universities(table).text
+        text = get_universities(table, pro_code).text
         if key == "main_info":
             table_university = pd.read_html(text)
             data_frame1 = table_university[0]
@@ -111,17 +115,36 @@ for year in years:
             UNIVERSITE_ISMI = data_frame1.iloc[2][1]
             FAKULTE = data_frame1.iloc[3][1]
             BOLUM_ADI = data_frame1.columns.values[0]
-            universities_table(PROGRAM_KODU, YIL, UNIVERSITE_ISMI, FAKULTE, BOLUM_ADI)
+            UNI_TYPE = data_frame1.iloc[1][1]
+            PUAN_TURU = data_frame1.iloc[4][1]
+            BURS_TURU = data_frame1.iloc[5][1]
+            universities_table(PROGRAM_KODU, YIL, UNIVERSITE_ISMI, FAKULTE, BOLUM_ADI, UNI_TYPE, PUAN_TURU, BURS_TURU)
             print(key, "table has been uploaded")
+            print("###########################################")
+            df2 = table_university[1]
+            df2.insert(0, "pro_code", pro_code)
+            df2.insert(1, "yil", year)
+            df2.rename(columns={0: "genel_bilgiler", 1: "genel_bilgiler_değerli"}, inplace=True)
+            print(df2)
+            df2.to_sql(key+"_V2", engine, if_exists='replace', index=False)
+            print(key+"_V2", "table has been uploaded")
+            print("###########################################")
+            df3 = table_university[2]
+            df3.insert(0, "pro_code", pro_code)
+            df3.insert(1, "yil", year)
+            df3.rename(columns={0: "genel_bilgiler", 1: "genel_bilgiler_değerli"}, inplace=True)
+            print(df3)
+            df3.to_sql(key+"_V3", engine, if_exists='replace', index=False)
+            print(key+"_V3", "table has been uploaded")
             print("###########################################")
         elif key == "quota_placement_statistics":
             table_university = pd.read_html(text, header=0)
             data_frame1 = table_university[0]
-            data_frame1.rename(columns={'Yerleşme Oranı %': "yerlesme_oranı"}, inplace=True)
+            data_frame1.rename(columns={'Yerleşme Oranı %': "yerlesme_oranı", 'Unnamed: 0': "kontenjan_türü"}, inplace=True)
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur3', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "gender_distribution_of_students":
@@ -131,10 +154,9 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur6', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
-        #TODO: concat two df
         elif key == "geographic_places_where_students_come_from":
             table_university = pd.read_html(text, header=0)
             data_frame1 = table_university[0]
@@ -142,15 +164,17 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur7', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'bölge'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
             data_frame2.insert(1, "yil", year)
             print(data_frame2)
             #create a new table for regions
-            data_frame2.to_sql('nur8', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            data_frame2.to_sql(key+"_for_regions", engine, if_exists='replace', index=False)
+            print(key+"_for_regions", "table has been uploaded")
             print("###########################################")
         elif key == "provinces_of_students":
             table_university = pd.read_html(text, header=0)
@@ -159,7 +183,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur9', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "educational_status_of_students":
@@ -169,7 +193,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur10', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "high_school_graduation_years_of_students":
@@ -179,7 +203,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur11', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "high_school_fields_of_students":
@@ -189,10 +213,9 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur12', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
-        #TODO: concat two df
         elif key == "high_school_types_of_students":
             table_university = pd.read_html(text, skiprows=1, header=0)
             data_frame1 = table_university[0]
@@ -200,23 +223,25 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur13', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key+"_genel_liseler", engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'bölge'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
             data_frame2.insert(1, "yil", year)
             print("-------------------------------------")
             print(data_frame2)
-            # create a new table for regions
-            data_frame2.to_sql('nur14', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            # create a new table for meslek liseleri
+            data_frame2.to_sql(key+"_meslek_liseleri", engine, if_exists='replace', index=False)
+            print(key+"_meslek_liseleri", "table has been uploaded")
             print("###########################################")
         elif key == "high_schools_from_which_students_graduated":
             table_university = pd.read_html(text, skiprows=1, header=0)
             data_frame1 = table_university[0]
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
-            data_frame1.to_sql('nur155', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "students_school_firsts":
@@ -226,7 +251,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur15', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "base_score_and_achievement_statistics":
@@ -236,7 +261,10 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur16', engine, if_exists='replace', index=False)
+            #başarı puanı
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             table_university1 = pd.read_html(text, header=0, skiprows=1)
             data_frame2 = table_university1[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'bölge'}, inplace=True)
@@ -245,8 +273,8 @@ for year in years:
             print("-------------------------------------")
             print(data_frame2)
             # create a new table for son yerleşen sıralama
-            data_frame2.to_sql('nur17', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            data_frame2.to_sql(key+"_yerlesen_siralama", engine, if_exists='replace', index=False)
+            print(key+"_yerlesen_siralama", "table has been uploaded")
             print("###########################################")
         elif key == "last_placed_student_profile":
             table_university = pd.read_html(text)
@@ -255,7 +283,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur18', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "YKS_net_averages_of_students":
@@ -265,7 +293,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur19', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "students_YKS_scores":
@@ -275,16 +303,18 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur20', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'genel_bilgiler'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
             data_frame2.insert(1, "yil", year)
             print("-------------------------------------")
             print(data_frame2)
-            # create a new table for son yerleşen sıralama
-            data_frame2.to_sql('nur21', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            # create a new table for en düşük ortalama
+            data_frame2.to_sql(key+"_en_düsük", engine, if_exists='replace', index=False)
+            print(key+"_en_düsük", "table has been uploaded")
             print("###########################################")
         elif key == "YKS_success_order_of_students":
             table_university = pd.read_html(text, header=0, thousands=None)
@@ -293,16 +323,18 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur22', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'genel_bilgiler'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
             data_frame2.insert(1, "yil", year)
             print("-------------------------------------")
             print(data_frame2)
-            # create a new table for son yerleşen sıralama
-            data_frame2.to_sql('nur23', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            # create a new table for son sıralama
+            data_frame2.to_sql(key+"_son_siralama", engine, if_exists='replace', index=False)
+            print(key+"_son_siralama", "table has been uploaded")
             print("###########################################")
         elif key == "preference_statistics_across_the_country":
             table_university = pd.read_html(text, thousands=None)
@@ -311,7 +343,9 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur24', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'genel_bilgiler'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
@@ -319,9 +353,9 @@ for year in years:
             data_frame2.drop(columns=data_frame2.columns[-1],  axis=1,  inplace=True)
             print("-------------------------------------")
             print(data_frame2)
-            # create a new table for son yerleşen sıralama
-            data_frame2.to_sql('nur25', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            # create a new table for tercih sırası
+            data_frame2.to_sql(key+"_tercih_sırası", engine, if_exists='replace', index=False)
+            print(key+"_tercih_sırası", "table has been uploaded")
             print("###########################################")
         #TODO: check later!! tercih sırası comes twice.
         elif key == "in_which_preferences_students_settled":
@@ -333,7 +367,9 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur26', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'genel_bilgiler'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
@@ -341,9 +377,9 @@ for year in years:
             data_frame2.drop(columns=data_frame2.columns[-1], axis=1, inplace=True)
             print("-------------------------------------")
             print(data_frame2)
-            # create a new table for son yerleşen sıralama
-            data_frame2.to_sql('nur27', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            # create a new table for son yerleşen sayısı
+            data_frame2.to_sql(key+"_yerlesen_sayisi", engine, if_exists='replace', index=False)
+            print(key+"_yerlesen_sayisi", "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_general":
             table_university = pd.read_html(text, thousands=None)
@@ -352,7 +388,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur28', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_university_type":
@@ -362,7 +398,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur29', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_universities":
@@ -374,17 +410,18 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur30', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
+            print(key, "table has been uploaded")
+            print("###########################################")
             data_frame2 = table_university[1]
             data_frame2.rename(columns={'% Oran': "oran", 'Unnamed: 0': 'genel_bilgiler'}, inplace=True)
             data_frame2.insert(0, "pro_code", pro_code)
             data_frame2.insert(1, "yil", year)
-            #data_frame2.drop(columns=data_frame2.columns[-1], axis=1, inplace=True)
             print("-------------------------------------")
             print(data_frame2)
             # create a new table for devlet üniversiteleri.
-            data_frame2.to_sql('nur31', engine, if_exists='replace', index=False)
-            print(key, "table has been uploaded")
+            data_frame2.to_sql(key+"_devlet_üniversiteleri", engine, if_exists='replace', index=False)
+            print(key+"_devlet_üniversiteleri", "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_provinces":
             table_university = pd.read_html(text, thousands=None)
@@ -393,7 +430,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur32', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_same_programs":
@@ -403,7 +440,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur33', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         elif key == "preference_tendency_programs":
@@ -413,7 +450,7 @@ for year in years:
             data_frame1.insert(0, "pro_code", pro_code)
             data_frame1.insert(1, "yil", year)
             print(data_frame1)
-            data_frame1.to_sql('nur34', engine, if_exists='replace', index=False)
+            data_frame1.to_sql(key, engine, if_exists='replace', index=False)
             print(key, "table has been uploaded")
             print("###########################################")
         counter += 1
